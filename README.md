@@ -1,1 +1,1 @@
-# spark-template-parent
+# Spark maven project template
