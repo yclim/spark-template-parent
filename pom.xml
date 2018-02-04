@@ -2,27 +2,29 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>example</groupId>
-    <artifactId>spark-template-parent</artifactId>
+    <artifactId>spark-test</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>spark-template-parent</name>
 
     <modules>
-        <module>spark-template-child</module>
+        <module>protobuf-test</module>
     </modules>
 
     <properties>
         <main.basedir>${project.basedir}</main.basedir>
         <cdh.version>5.12.0</cdh.version>
         <hadoop.version>2.6.0-cdh${cdh.version}</hadoop.version>
-        <spark.version>2.1.0.cloudera2</spark.version>
-        <scala.version>2.11.8</scala.version>
+        <spark.version>2.2.0.cloudera1</spark.version>
+        <scala.version>2.11.12</scala.version>
         <scala.binary.version>2.11</scala.binary.version>
+        <scalapb_2.11.version>0.7.0-rc4</scalapb_2.11.version>
         <java.version>1.8</java.version>
 
         <code.cache.size>512m</code.cache.size>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
     </properties>
 
     <repositories>
@@ -30,7 +32,7 @@
             <id>central</id>
             <!-- This should be at top, it makes maven try the central repo first and then others and hence faster dep resolution -->
             <name>Maven Repository</name>
-            <url>https://repo.maven.apache.org/maven2</url>
+            <url>http://central.maven.org/maven2/</url>
             <releases>
                 <enabled>true</enabled>
             </releases>
@@ -73,7 +75,19 @@
             </dependency>
             <dependency>
                 <groupId>org.apache.spark</groupId>
+                <artifactId>spark-streaming_${scala.binary.version}</artifactId>
+                <version>${spark.version}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.spark</groupId>
                 <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                <version>${spark.version}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.spark</groupId>
+                <artifactId>spark-sql-kafka-0-10_${scala.binary.version}</artifactId>
                 <version>${spark.version}</version>
                 <scope>provided</scope>
             </dependency>
@@ -83,6 +97,11 @@
                 <version>${hadoop.version}</version>
                 <scope>provided</scope>
             </dependency>
+            <dependency>
+                <groupId>com.thesamet.scalapb</groupId>
+                <artifactId>scalapb-runtime_2.11</artifactId>
+                <version>${scalapb_2.11.version}</version>
+            </dependency>
 
         </dependencies>
     </dependencyManagement>
@@ -90,6 +109,91 @@
     <build>
         <pluginManagement>
             <plugins>
+
+                <!-- Create the generated protobuf folder in target  -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-antrun-plugin</artifactId>
+                    <version>1.7</version>
+                    <executions>
+                        <execution>
+                            <id>mkdir-generated-sources</id>
+                            <goals>
+                                <goal>run</goal>
+                            </goals>
+                            <phase>generate-sources</phase>
+                            <configuration>
+                                <target>
+                                    <mkdir dir="${project.build.directory}/generated-sources/protobuf" />
+                                </target>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+
+                <!-- Add the generated folder as a source -->
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>build-helper-maven-plugin</artifactId>
+                    <version>1.12</version>
+                    <executions>
+                        <execution>
+                            <phase>generate-sources</phase>
+                            <goals>
+                                <goal>add-source</goal>
+                            </goals>
+                            <configuration>
+                                <sources>
+                                    <source>${project.build.directory}/generated-sources/protobuf</source>
+                                </sources>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+
+                <!-- Compile the proto file(s) -->
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>1.5.0</version>
+                    <executions>
+                        <execution>
+                            <id>generate-scala-protobuf-classes</id>
+                            <goals>
+                                <goal>java</goal>
+                            </goals>
+                            <phase>generate-sources</phase>
+                            <configuration>
+                                <mainClass>scalapb.ScalaPBC</mainClass>
+                                <cleanupDaemonThreads>false</cleanupDaemonThreads>
+                                <includePluginDependencies>true</includePluginDependencies>
+                                <classpathScope>compile</classpathScope>
+                                <executableDependency>
+                                    <groupId>com.thesamet.scalapb</groupId>
+                                    <artifactId>scalapbc_2.11</artifactId>
+                                </executableDependency>
+                                <arguments>
+                                    <argument>-v300</argument> <!-- for protoc v3.0.0, can be 261 for v2.6.1 -->
+                                    <argument>--throw</argument> <!-- Important: otherwise scalapbc will kill the VM -->
+                                    <argument>--proto_path=${project.basedir}/src/main/protobuf</argument>
+                                    <!--<argument>&#45;&#45;proto_path=${project.basedir}/third_party</argument>-->
+                                    <argument>--scala_out=${project.build.directory}/generated-sources/protobuf</argument>
+                                    <argument>${project.basedir}/src/main/protobuf/example.proto</argument>
+                                </arguments>
+                            </configuration>
+                        </execution>
+                    </executions>
+                    <dependencies>
+                        <dependency>
+                            <groupId>com.thesamet.scalapb</groupId>
+                            <artifactId>scalapbc_2.11</artifactId>
+                            <version>0.7.0-rc4</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+
+
+
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
@@ -105,6 +209,7 @@
                         <skip>true</skip> <!-- skip testCompile -->
                     </configuration>
                 </plugin>
+
                 <plugin>
                     <groupId>net.alchim31.maven</groupId>
                     <artifactId>scala-maven-plugin</artifactId>
